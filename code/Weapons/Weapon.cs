@@ -110,57 +110,62 @@ public sealed class Weapon : Component
 		if (PlayerController.IsFirstPerson)
 		{
 			var selelctedAmmo = AmmoContainer.GetAmmo(AmmoType);
-			if (Input.Pressed("reload") && MaxAmmo != 0 && ShotsFired != 0 && !IsProxy && selelctedAmmo > 0 && UsesAmmo)
+			if (IsProxy){
+				ViewModelGun.Set("b_reload", false);
+			}
+			else if (!IsProxy)
 			{
-				var ammoToSet = selelctedAmmo - ShotsFired;
-				if (ammoToSet > selelctedAmmo)
+				if (Input.Pressed("reload") && MaxAmmo != 0 && ShotsFired != 0 && selelctedAmmo > 0 && UsesAmmo)
 				{
-					Ammo = selelctedAmmo;
-					AmmoContainer.SetAmmo(AmmoType, 0);
+					var ammoToSet = selelctedAmmo - ShotsFired;
+					if (ammoToSet > selelctedAmmo)
+					{
+						Ammo = selelctedAmmo;
+						AmmoContainer.SetAmmo(AmmoType, 0);
+					}
+					else
+					{
+						AmmoContainer.SetAmmo(AmmoType, ammoToSet);
+						Ammo = StartingAmmo;
+					}
+					ViewModelGun.Set("b_reload", true);
+					ShotsFired = 0;
+					TimeSinceReload = 0;
+				}
+				else
+				// {
+				// 	ViewModelGun.Set("b_reload", false);
+				// }
+				ViewModelGun.Set("aim_pitch", PlayerController.eyeAngles.pitch);
+				ViewModelGun.Set("aim_yaw", PlayerController.eyeAngles.yaw);
+				if (Input.Pressed("jump"))
+				{
+					ViewModelGun.Set("b_jump", true);
+				}
+				if (!PlayerController.CharacterController.IsOnGround)
+				{
+					ViewModelGun.Set("b_grounded", false);
 				}
 				else
 				{
-					AmmoContainer.SetAmmo(AmmoType, ammoToSet);
-					Ammo = StartingAmmo;
+					ViewModelGun.Set("b_grounded", true);
 				}
-				ViewModelGun.Set("b_reload", true);
-				ShotsFired = 0;
-				TimeSinceReload = 0;
+				ViewModelGun.Set("move_groundspeed", PlayerController.CharacterController.Velocity.Length);
+				if (Ammo == 0)
+				{
+					ViewModelGun.Set("b_empty", true);
+				}
+				else
+				{
+					ViewModelGun.Set("b_empty", false);
+				}
+				if (Input.Pressed("attack1") && Ammo <= 0)
+				{
+					ViewModelGun.Set("b_attack_dry", true);
+				}
+				ViewModelGun.Set("aim_yaw", PlayerController.eyeAngles.yaw);
+				ViewModelGun.Set("aim_pitch", PlayerController.eyeAngles.pitch);
 			}
-			else
-			{
-				ViewModelGun.Set("b_reload", false);
-			}
-			ViewModelGun.Set("aim_pitch", PlayerController.eyeAngles.pitch);
-			ViewModelGun.Set("aim_yaw", PlayerController.eyeAngles.yaw);
-			if (Input.Pressed("jump") && !IsProxy)
-			{
-				ViewModelGun.Set("b_jump", true);
-			}
-			if (!PlayerController.CharacterController.IsOnGround && !IsProxy)
-			{
-				ViewModelGun.Set("b_grounded", false);
-			}
-			else
-			{
-				ViewModelGun.Set("b_grounded", true);
-			}
-			ViewModelGun.Set("move_groundspeed", PlayerController.CharacterController.Velocity.Length);
-			if (Ammo == 0)
-			{
-				ViewModelGun.Set("b_empty", true);
-			}
-			else
-			{
-				ViewModelGun.Set("b_empty", false);
-			}
-			if (Input.Pressed("attack1") && Ammo <= 0)
-			{
-				ViewModelGun.Set("b_attack_dry", true);
-			}
-			ViewModelGun.Set("aim_yaw", PlayerController.eyeAngles.yaw);
-			ViewModelGun.Set("aim_pitch", PlayerController.eyeAngles.pitch);
-			
 		}
 		else
 		{
@@ -198,6 +203,8 @@ public sealed class Weapon : Component
 	}
 	void Fire()
 	{
+		var ray = Scene.Camera.ScreenNormalToRay(0.5f);
+		var tr = Scene.Trace.Ray(ray, TraceLength).WithoutTags(Steam.SteamId.ToString()).Run();
 		if (PlayerController.IsGrabbing) return;
 		OnFire?.Invoke(PlayerController, this, AmmoContainer);
 		if (Ammo > 0 && TimeSinceFire > FireRate)
@@ -208,15 +215,18 @@ public sealed class Weapon : Component
 			Ammo--;
 			ShotsFired++;
 			}
-			var ray = Scene.Camera.ScreenNormalToRay(0.5f);
+			
 			ray.Forward += Vector3.Random * Spread;
-			var tr = Scene.Trace.Ray(ray, TraceLength).WithoutTags(Steam.SteamId.ToString()).Run();
+			
 			if (tr.Hit)
 			{
 				tr.GameObject.Components.TryGet<EnemyHealthComponent>( out var dummy, FindMode.EverythingInSelfAndParent);
 				tr.GameObject.Components.TryGet<PlayerController>(out var player, FindMode.EverythingInSelfAndParent);
 				var damageTaker = tr.GameObject.Components.Get<DamageTaker>(FindMode.EverythingInSelfAndParent);
-				
+				if (damageTaker is not null)
+				{
+					damageTaker.TakeDamage(Damage, GameObject.Parent.Id);
+				}
 				if (dummy is not null)
 				{
 					dummy.Hurt(Damage, GameObject.Parent.Id);
@@ -230,11 +240,9 @@ public sealed class Weapon : Component
 				{
 					ImpactParticle.Clone(tr.HitPosition, Rotation.LookAt(tr.Normal));
 				}
-				if (damageTaker is not null)
-				{
-					damageTaker.TakeDamage(Damage, GameObject.Parent.Id);
-				}
+				
 				var decal = Decal.Clone(new Transform(tr.HitPosition + tr.Normal * 2.0f, Rotation.LookAt( -tr.Normal, Vector3.Random )));
+			}	
 				
 		if (tr.Surface is null)
 		{
@@ -263,7 +271,7 @@ public sealed class Weapon : Component
 		{
 			damageAble.OnDamage(damage);
 		}
-			}	
+				
 		
 			TimeSinceFire = 0;
 			PlayerController.AnimationHelper.Target.Set("b_attack", true);
@@ -290,5 +298,5 @@ public sealed class Weapon : Component
 		{
 			ViewModelGun.Set("b_attack", false);
 		}
-}
+	}
 }
